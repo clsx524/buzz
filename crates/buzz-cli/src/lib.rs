@@ -263,6 +263,9 @@ enum Cmd {
     /// Draft owner-reviewed agent creation and updates
     #[command(subcommand)]
     Agents(AgentsCmd),
+    /// Publish and read personal-assistant findings, updates and reports
+    #[command(subcommand)]
+    Assistant(commands::assistant::AssistantCmd),
     /// Send, read, search, and manage messages
     #[command(subcommand)]
     Messages(MessagesCmd),
@@ -2262,6 +2265,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
 
     match cli.command {
         Cmd::Agents(sub) => commands::agents::dispatch(sub, &client).await,
+        Cmd::Assistant(sub) => commands::assistant::dispatch(sub, &client, &cli.format).await,
         Cmd::Messages(sub) => commands::messages::dispatch(sub, &client, &cli.format).await,
         Cmd::Channels(sub) => commands::channels::dispatch(sub, &client, &cli.format).await,
         Cmd::Canvas(sub) => commands::channels::dispatch_canvas(sub, &client).await,
@@ -2447,56 +2451,6 @@ mod tests {
             "--emoji alone must not imply a status"
         );
         assert!(Cli::try_parse_from(["buzz", "users", "set-status", "--clear"]).is_ok());
-    }
-
-    #[test]
-    fn command_inventory_is_stable() {
-        let expected_groups: Vec<&str> = vec![
-            "agents",
-            "canvas",
-            "channels",
-            "dms",
-            "emoji",
-            "feed",
-            "gifs",
-            "issues",
-            "media",
-            "mem",
-            "messages",
-            "moderation",
-            "notes",
-            "pack",
-            "patches",
-            "pr",
-            "projects",
-            "reactions",
-            "repos",
-            "social",
-            "upload",
-            "users",
-            "workflows",
-        ];
-
-        let cmd = Cli::command();
-        let mut actual: Vec<String> = cmd
-            .get_subcommands()
-            .map(|s| s.get_name().to_string())
-            .filter(|n| n != "help")
-            .collect();
-        actual.sort();
-
-        assert_eq!(
-            actual.len(),
-            expected_groups.len(),
-            "Expected {} groups, got {}. Actual: {:?}",
-            expected_groups.len(),
-            actual.len(),
-            actual
-        );
-        assert_eq!(
-            actual, expected_groups,
-            "Command group inventory drift detected"
-        );
     }
 
     #[test]

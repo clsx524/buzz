@@ -6,6 +6,7 @@ import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
 import 'package:buzz/features/channels/me/me_page.dart';
 import 'package:buzz/shared/me/me_assistants.dart';
+import 'package:buzz/shared/me/default_agent.dart';
 import 'package:buzz/shared/me/me_chat_creation.dart';
 import 'package:buzz/shared/mentions/agent_identity_provider.dart';
 import 'package:buzz/shared/me/me_groups.dart';
@@ -159,6 +160,8 @@ void main() {
           }
         });
         final directory = Completer<List<AgentDirectoryEntry>>();
+        final preference = StreamController<String?>.broadcast();
+        addTearDown(preference.close);
         if (flutterSheet) directory.complete([]);
         final draft = Completer<Map<String, String>>();
         String? presentationId;
@@ -193,6 +196,7 @@ void main() {
                 (ref) => Stream.value(const MeGroups()),
               ),
               meAssistantsProvider.overrideWith((ref) => directory.future),
+              defaultAgentProvider.overrideWith((ref) => preference.stream),
               channelsProvider.overrideWith(_EmptyChannels.new),
               channelMembersProvider(channelId).overrideWith((ref) async => []),
               channelActionsProvider.overrideWith(
@@ -207,7 +211,10 @@ void main() {
                 ),
               ),
             ],
-            child: MaterialApp(theme: AppTheme.light(), home: const MePage()),
+            child: MaterialApp(
+              theme: AppTheme.light(),
+              home: const MePage(personal: true),
+            ),
           ),
         );
         await tester.pumpAndSettle();

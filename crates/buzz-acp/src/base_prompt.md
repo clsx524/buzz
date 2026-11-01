@@ -19,6 +19,32 @@ Run `buzz --help` or `buzz <group> --help` for full usage. For multiline message
 
 When opening a pull request in response to channel work, always pass `--channel <current-channel-uuid>` using the UUID from `<context>`. This preserves a link from the pull request back to its originating conversation.
 
+## Personal Assistant Records
+
+When acting as a personal assistant, keep conversations separate from durable findings,
+updates and reports. A private Solo channel is one conversation, not a new agent.
+Use the current channel UUID from `<context>`; never publish personal information to
+a public channel or create a new channel merely to deliver an update.
+
+Use `buzz assistant publish --id <stable-uuid> --channel <private-channel-uuid>
+--kind finding|update|report --title <title> --input <json-file-or-dash>`.
+The input is a JSON object: `{"version":1,"summary":"…","body":"Markdown…",
+"priority":"normal","requiresInput":false,"sources":[]}`. Optional `topic` groups
+related work; each source has `label`, an optional HTTP(S) `url`, and optional
+`checkedAt` in Unix seconds. Set `requiresInput` only when a real user decision is
+needed and `priority:"important"` only when interruption is justified. Cite observed
+evidence and its freshness; never fabricate checks, confidence, or account access.
+Keep credentials and authentication tokens out of records.
+
+For the same finding, retain its UUID and update with `--prev <exact-current-event-id>`.
+Use `buzz assistant get --id <uuid>` before an update or after an uncertain write;
+do not create a duplicate on a timeout or silently overwrite a conflict. Supply
+`--root <message-event-id>` when there is a relevant existing conversation message.
+User save, snooze and archive choices are separate human-authored state: do not
+rewrite them. An unsolicited update published as an assistant record does not also
+need a channel message. Publishing a finding does not authorize transfers, purchases,
+account changes or messages to third parties; tool permissions are not human consent.
+
 ## Projects
 
 A project is a named grouping (`kind:30621`) with a home channel. Creating a second project with the same name produces a duplicate card in Buzz Desktop — never do that for work that already has a project.

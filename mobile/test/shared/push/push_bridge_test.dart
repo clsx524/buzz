@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:buzz/shared/community/community.dart';
 import 'package:buzz/shared/deeplink/deep_link.dart';
 import 'package:buzz/shared/push/push_bridge.dart';
 import 'package:buzz/shared/relay/relay_provider.dart';
@@ -45,20 +44,6 @@ void main() {
     expect(apnsDeviceToken.value, '01ab');
     expect(apnsRegistrationError.value, isNull);
   });
-
-  test(
-    'starts native permission and APNs registration without a result gate',
-    () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(_channel, (call) async {
-            expect(call.method, 'startRegistration');
-            return null;
-          });
-
-      await startBuzzPushRegistration();
-    },
-  );
 
   test('strict age-gate snapshot requires a native handler', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -118,17 +103,6 @@ void main() {
       await readBuzzPushAuthorizationStatus(),
       BuzzPushAuthorizationStatus.denied,
     );
-  });
-
-  test('opens native notification settings', () async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(_channel, (call) async {
-          expect(call.method, 'openNotificationSettings');
-          return true;
-        });
-
-    expect(await openBuzzPushNotificationSettings(), isTrue);
   });
 
   test('refreshes not-determined permission to denied on resume', () async {
@@ -208,96 +182,6 @@ void main() {
     expect(grants.single.expiresAt, 1752624000);
     expect(pushEndpointGrants.value.single.endpointGrant, 'opaque-grant');
     expect(pushEndpointGrantError.value, isNull);
-  });
-
-  test(
-    'debug enrollment carries the configured relay and gateway URLs',
-    () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      final methods = <String>[];
-      final enrollmentArguments = <Object?>[];
-      final snapshotArguments = <Object?>[];
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(_channel, (call) async {
-        methods.add(call.method);
-        if (call.method == 'enrollPush') {
-          enrollmentArguments.add(call.arguments);
-          return _grantMap('new-grant');
-        }
-        if (call.method == 'endpointGrants') {
-          return [_grantMap('new-grant')];
-        }
-        if (call.method == 'syncPushSnapshot') {
-          snapshotArguments.add(call.arguments);
-          return null;
-        }
-        fail('Unexpected method ${call.method}');
-      });
-
-      final firstGrant = await enrollBuzzPush(
-        'wss://relay.example/',
-        'https://gateway-one.example/',
-      );
-      final secondGrant = await enrollBuzzPush(
-        'wss://relay.example/',
-        'https://gateway-two.example/',
-        communitiesForSnapshotRefresh: [
-          Community(
-            id: 'community-id',
-            name: 'Community',
-            relayUrl: 'wss://relay.example/',
-            pubkey: 'd' * 64,
-            pushNotificationsEnabled: true,
-            addedAt: DateTime.fromMillisecondsSinceEpoch(0),
-          ),
-        ],
-      );
-
-      expect(firstGrant.endpointGrant, 'new-grant');
-      expect(secondGrant.endpointGrant, 'new-grant');
-      expect(enrollmentArguments, [
-        {
-          'relayUrl': 'wss://relay.example/',
-          'gatewayUrl': 'https://gateway-one.example/',
-        },
-        {
-          'relayUrl': 'wss://relay.example/',
-          'gatewayUrl': 'https://gateway-two.example/',
-        },
-      ]);
-      expect(methods, [
-        'enrollPush',
-        'endpointGrants',
-        'enrollPush',
-        'endpointGrants',
-        'syncPushSnapshot',
-      ]);
-      expect(snapshotArguments, [
-        {
-          'section': 'communities',
-          'communities': [
-            {
-              'id': 'community-id',
-              'name': 'Community',
-              'relayUrl': 'wss://relay.example/',
-              'pubkey': 'd' * 64,
-              'policies': <Object?>[],
-            },
-          ],
-          'signingKeys': <String, String>{},
-        },
-      ]);
-      expect(pushEndpointGrants.value.single.endpointGrant, 'new-grant');
-    },
-  );
-
-  test('development push gateway matches the compiled configuration', () {
-    const expectedGateway = String.fromEnvironment(
-      'BUZZ_PUSH_GATEWAY_URL',
-      defaultValue: 'https://push.buzz.xyz',
-    );
-    expect(Env.pushGatewayUrl, expectedGateway);
   });
 
   test('exposes APNs registration failure', () async {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:buzz/shared/me/me_chat_creation.dart';
+import 'package:buzz/shared/me/default_agent.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:nostr/nostr.dart' as nostr;
@@ -208,6 +209,8 @@ void main() {
     (tester) async {
       final action = ValueNotifier<VoidCallback?>(null);
       addTearDown(action.dispose);
+      final preference = StreamController<String?>();
+      addTearDown(preference.close);
       final sync = MeSync(
         RelaySessionNotifier(),
         RelayConfig(
@@ -236,17 +239,22 @@ void main() {
               ),
             ),
             meSyncProvider.overrideWithValue(sync),
+            defaultAgentProvider.overrideWith((ref) => preference.stream),
             channelsProvider.overrideWith(FakeChannels.new),
             meAssistantsProvider.overrideWith(
               (ref) async => const [
                 AgentDirectoryEntry(pubkey: 'agent', displayName: 'Owner Name'),
+                AgentDirectoryEntry(
+                  pubkey: 'other-agent',
+                  displayName: 'Hermes',
+                ),
               ],
             ),
             userCacheProvider.overrideWith(_ConfusableProfiles.new),
           ],
           child: MaterialApp(
             theme: AppTheme.light(),
-            home: MePage(newChatAction: action),
+            home: MePage(personal: true, newChatAction: action),
           ),
         ),
       );
@@ -286,6 +294,10 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('new-session-assistant')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Owner Name').last);
+      await tester.pumpAndSettle();
+      // Compose must not wait for the shared default. Once the human chooses a
+      // recipient, a later default update must not silently reroute this draft.
+      preference.add('other-agent');
       await tester.pumpAndSettle();
       final row = find.byKey(const ValueKey('new-session-assistant'));
       expect(

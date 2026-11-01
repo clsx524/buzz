@@ -1,13 +1,23 @@
 part of 'me_page.dart';
 
 class _NewMeChat extends HookConsumerWidget {
-  const _NewMeChat();
+  const _NewMeChat({required this.suggestAssistant});
+  final bool suggestAssistant;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sync = ref.watch(meSyncProvider);
     final pending = useMemoized(() => MeChatCreation.pending(sync));
     final name = useTextEditingController(text: pending?.name ?? '');
     final selected = useState<String?>(pending?.agent);
+    final defaultAssistant = suggestAssistant && pending == null
+        ? ref.watch(personalAssistantProvider)
+        : null;
+    useEffect(() {
+      if (selected.value == null && pending == null) {
+        selected.value = defaultAssistant;
+      }
+      return null;
+    }, [defaultAssistant]);
     final project = useState<String?>(pending?.project);
     final groups = ref.watch(meGroupsProvider);
     final channelId = useMemoized(() => pending?.id ?? const Uuid().v4());

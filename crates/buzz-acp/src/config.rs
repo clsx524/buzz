@@ -798,7 +798,7 @@ fn default_agent_args(command: &str) -> Option<Vec<String>> {
     match normalize_agent_command_identity(command).as_str() {
         "goose" => Some(vec!["acp".to_string()]),
         "codex" | "codex-acp" | "claude-agent-acp" | "claude-code-acp" | "claude-code"
-        | "claudecode" | "buzz-agent" => Some(Vec::new()),
+        | "claudecode" | "buzz-agent" | "hermes-acp" => Some(Vec::new()),
         _ => None,
     }
 }
@@ -1725,6 +1725,21 @@ mod tests {
         assert_eq!(
             normalize_agent_args("claude-agent-acp", vec!["acp".into()]),
             Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn hermes_acp_drops_the_generic_subcommand_but_preserves_profile_args() {
+        assert_eq!(
+            normalize_agent_args("/opt/hermes/bin/hermes-acp", vec!["acp".into()]),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            normalize_agent_args(
+                r"C:\Tools\Hermes\hermes-acp.cmd",
+                vec!["--profile".into(), "personal".into()],
+            ),
+            vec!["--profile", "personal"]
         );
     }
 

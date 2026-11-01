@@ -13,6 +13,7 @@ import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 import { BackupStep } from "./BackupStep";
 import { DefaultConfigStep } from "./DefaultConfigStep";
 import { DownloadKeyStep } from "./DownloadKeyStep";
+import { PERSONAL_ASSISTANT_MODE } from "@/features/personal/config";
 import {
   backupSessionToPasswordEntry,
   resetEncryptedBackupSession,
@@ -587,6 +588,31 @@ export function MachineOnboardingFlow({
             returningFromSecurity={returningFromSecurity}
           />
         )
+      ) : page === "setup" && PERSONAL_ASSISTANT_MODE ? (
+        <div className="space-y-6">
+          <h1 className="text-title font-normal">
+            Your assistant stays on your server
+          </h1>
+          <p className="text-base leading-6 text-foreground/80">
+            Connect to your Buzz community, then choose your server’s Hermes
+            assistant in Conversations. This device does not need a local model,
+            coding harness, or API key.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            If the assistant is not listed, check that its server process is
+            connected to the same relay and authorized for your identity.
+          </p>
+          <Button
+            className="min-h-11 w-full"
+            onClick={() =>
+              complete(selectedPubkey ?? undefined, {
+                continueToProfile: !identityWasImported,
+              })
+            }
+          >
+            Continue to your assistant
+          </Button>
+        </div>
       ) : page === "setup" ? (
         <SetupStep
           actions={{

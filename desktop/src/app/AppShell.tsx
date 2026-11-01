@@ -106,6 +106,9 @@ import { AppShellTrayMenu } from "@/app/useAppShellTrayMenu";
 import { AppProfilePanelProvider } from "@/app/AppProfilePanelProvider";
 import { AppWorkflowEditorOverlayProvider } from "@/app/AppWorkflowEditorOverlayProvider";
 import { LazySettingsScreen } from "@/app/LazySettingsScreen";
+import { PERSONAL_ASSISTANT_MODE } from "@/features/personal/config";
+import { PersonalSidebar } from "@/features/personal/PersonalSidebar";
+import { AddCommunityDialog } from "@/features/communities/ui/AddCommunityDialog";
 const EMPTY_CHANNELS: Channel[] = [];
 export function AppShell() {
   useWebviewZoomShortcuts();
@@ -206,7 +209,10 @@ export function AppShell() {
   );
   useAgentsDataRefresh();
   // Chunk F: auto-restart drifted idle agents (per-agent opt-out, default ON).
-  useAutoRestartPolicy(communitiesHook.activeCommunity?.relayUrl);
+  useAutoRestartPolicy(
+    communitiesHook.activeCommunity?.relayUrl,
+    !PERSONAL_ASSISTANT_MODE,
+  );
   // Owner-global observer ingestion: receives + decrypts agent observer
   // frames and keeps derived active-turn liveness in sync app-wide, so no
   // individual screen/panel has to mount its own bridge for ingestion.
@@ -827,7 +833,34 @@ export function AppShell() {
                     </div>
                   ) : (
                     <div className="relative flex min-h-0 flex-1 overflow-visible">
-                      {!isHuddleRoom ? (
+                      {!isHuddleRoom && PERSONAL_ASSISTANT_MODE ? (
+                        <PersonalSidebar
+                          communityName={communitiesHook.activeCommunity?.name}
+                          onSettings={handleOpenSettings}
+                          communities={communitiesHook.communities}
+                          activeCommunityId={
+                            communitiesHook.activeCommunity?.id
+                          }
+                          onSwitchCommunity={handleSwitchCommunity}
+                          onAddCommunity={addCommunityDialog.openDialog}
+                          connectionDialog={
+                            <AddCommunityDialog
+                              prefill={addCommunityDialog.prefill}
+                              open={addCommunityDialog.open}
+                              onOpenChange={addCommunityDialog.onOpenChange}
+                              onSubmit={(community) => {
+                                const id = communitiesHook.addCommunity({
+                                  ...community,
+                                  pubkey:
+                                    community.pubkey ??
+                                    identityQuery.data?.pubkey,
+                                });
+                                handleSwitchCommunity(id);
+                              }}
+                            />
+                          }
+                        />
+                      ) : !isHuddleRoom ? (
                         <AppSidebar
                           activeCommunity={communitiesHook.activeCommunity}
                           channels={sidebarChannels}

@@ -2,8 +2,9 @@ part of 'me_page.dart';
 
 Future<(Channel, String)?> _showNewMeChat(
   BuildContext context,
-  WidgetRef ref,
-) async {
+  WidgetRef ref, {
+  required bool suggestAssistant,
+}) async {
   final initialSync = ref.read(meSyncProvider);
   final unfinished = MeChatCreation.pending(initialSync);
   if (unfinished != null) {
@@ -42,7 +43,9 @@ Future<(Channel, String)?> _showNewMeChat(
     final pending = MeChatCreation.pending(sync);
     final id = pending?.id ?? const Uuid().v4();
     String name = pending?.name ?? '';
-    String? assistant = pending?.agent;
+    String? assistant =
+        pending?.agent ??
+        (suggestAssistant ? ref.read(personalAssistantProvider) : null);
     String? project = pending?.project;
     String? error = pending == null ? null : 'Resume your unfinished chat.';
     var retry = pending != null;
@@ -111,6 +114,25 @@ Future<(Channel, String)?> _showNewMeChat(
               'presentationId': presentationId,
               'assistants': _nativeMeAssistants(agents),
             });
+            // A default may resolve later than inventory. Never delay compose or
+            // overwrite a saved retry or a choice already made in the native UI.
+            if (suggestAssistant && !retry && assistant == null) {
+              try {
+                await ref.read(defaultAgentProvider.future);
+                if (!active || !context.mounted || sync.disposed) return;
+                final suggested = ref.read(personalAssistantProvider);
+                if (suggested == null) return;
+                await const MethodChannel(
+                  'buzz/profile_text_editor',
+                ).invokeMethod<void>('updateChatAssistants', {
+                  'presentationId': presentationId,
+                  'assistants': _nativeMeAssistants(agents),
+                  'suggestedAssistant': suggested,
+                });
+              } catch (_) {
+                // Preference failure does not hide the usable inventory picker.
+              }
+            }
           } catch (_) {
             if (!active || !context.mounted || sync.disposed) return;
             try {
@@ -169,7 +191,7 @@ Future<(Channel, String)?> _showNewMeChat(
     title: 'New chat',
     isScrollControlled: true,
     requestFocus: true,
-    builder: (_) => const _NewMeChat(),
+    builder: (_) => _NewMeChat(suggestAssistant: suggestAssistant),
   );
 }
 
@@ -196,8 +218,10 @@ Future<Channel> _createMeChat(
     throw StateError('This agent is no longer available.');
   }
   final head = preflight[1] as NostrEvent?;
+  final existing = preflight[2] as Channel?;
+  final labelled = existing == null || existing.isSolo;
   (head == null ? const MeGroups() : sync.decode(head))
-      .place(channelId, group: project)
+      .place(channelId, group: project, labelled: labelled)
       .encode(sync.community);
   return intent.complete<Channel>(
     sync,
@@ -218,14 +242,16 @@ Future<Channel> _createMeChat(
     addAgent: () =>
         actions.addMembers(channelId: channelId, pubkeys: [assistant]),
     isPlaced: () async {
+      if (labelled && project == null) return true;
       final latest = await sync.head();
       if (latest == null) return false;
       final groups = sync.decode(latest);
-      return groups.channels.contains(channelId) &&
+      return (labelled || groups.channels.contains(channelId)) &&
           (project == null || groups.assignments[channelId] == project);
     },
-    place: () =>
-        sync.update((current) => current.place(channelId, group: project)),
+    place: () => sync.update(
+      (current) => current.place(channelId, group: project, labelled: labelled),
+    ),
   );
 }
 

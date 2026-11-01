@@ -9,6 +9,7 @@ use base64::Engine as _;
 
 fn main() {
     println!("cargo:rerun-if-env-changed=BUZZ_RELAY_URL");
+    println!("cargo:rerun-if-env-changed=VITE_BUZZ_PERSONAL_ASSISTANT");
     println!("cargo:rerun-if-env-changed=BUZZ_RELAY_HTTP");
     println!("cargo:rerun-if-env-changed=BUZZ_UPDATER_PUBLIC_KEY");
     println!("cargo:rerun-if-env-changed=BUZZ_UPDATER_ENDPOINT");

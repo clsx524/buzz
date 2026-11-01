@@ -21,6 +21,7 @@ import {
 import { isWelcomeChannel } from "@/features/onboarding/welcome";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { useThreadReplies } from "@/features/messages/useThreadReplies";
+import { PERSONAL_ASSISTANT_MODE } from "@/features/personal/config";
 import {
   startManagedAgent,
   stopManagedAgent,
@@ -504,7 +505,8 @@ export function useWelcomeKickoff(
   const agentAccessOwnerOnly = agentAccessOwnerOnlyQuery.data;
   const { globalConfig, isLoading: configLoading } = useGlobalAgentConfig();
   const channelId = activeChannel?.id ?? null;
-  const isActiveWelcome = isWelcomeChannel(activeChannel);
+  const isActiveWelcome =
+    !PERSONAL_ASSISTANT_MODE && isWelcomeChannel(activeChannel);
   const focusedWelcomeChannelRef = React.useRef<string | null>(null);
   focusedWelcomeChannelRef.current = isActiveWelcome ? channelId : null;
   // Watch the opener's thread subtree directly so teammate intro replies are

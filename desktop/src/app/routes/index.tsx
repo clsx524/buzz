@@ -9,6 +9,8 @@ import {
   WELCOME_CHANNEL_READY_EVENT,
 } from "@/features/onboarding/welcome";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { PERSONAL_ASSISTANT_MODE } from "@/features/personal/config";
+import { PersonalScreen } from "@/features/personal/PersonalScreen";
 
 type HomeRouteSearch = {
   item?: string;
@@ -44,6 +46,15 @@ export const Route = createFileRoute("/")({
 });
 
 function HomeRouteComponent() {
+  const { item } = Route.useSearch();
+  return PERSONAL_ASSISTANT_MODE ? (
+    <PersonalScreen section="today" itemId={item} />
+  ) : (
+    <StockHomeRouteComponent />
+  );
+}
+
+function StockHomeRouteComponent() {
   const { goChannel } = useAppNavigation();
   const channelsQuery = useChannelsQuery();
   const identityQuery = useIdentityQuery();

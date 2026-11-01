@@ -98,6 +98,7 @@ void main() {
           'enrollPush' => grant,
           'endpointGrants' => [grant],
           'startRegistration' || 'syncPushSnapshot' => null,
+          'takePendingNotificationResponse' => null,
           _ => throw StateError('Unexpected native call ${call.method}'),
         },
       );

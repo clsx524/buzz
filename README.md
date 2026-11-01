@@ -24,6 +24,80 @@
 
 ---
 
+## Personal assistant mode in this checkout
+
+The desktop and mobile clients default to **Today**, **Conversations**, and
+**Library**, rather than the upstream team/developer workspace described below.
+
+- **Today:** current findings, updates and reports, with evidence, freshness and
+  an explicit distinction between information and a question needing your input.
+- **Conversations:** independent private Solo channels, one per goal. Select an
+  existing server assistant; opening a chat never starts a model on the device.
+  Existing text, attachments and voice-note composition remain available.
+- **Library:** reports and saved findings. Saving is independent of archiving;
+  snoozed items return when their deadline passes. Opening a report never
+  approves an external action.
+
+The relay remains the communication application server: authentication, private
+channel membership, history, media and current artifact heads. Hermes's separate
+authenticated personal-assistant API supplies monitor controls, factual findings,
+questions and decision feedback; it does not replace relay history. One human
+still has separate human/agent identities and multiple devices. The existing
+relay deployment continues to require PostgreSQL, Redis and object storage.
+
+Private-channel membership controls access; report bodies are readable by the
+relay/operator, not end-to-end encrypted. Protect server storage and backups.
+Signatures authenticate an author, not the factual correctness of a finding.
+
+Findings use NIP-AR artifacts of type `assistant.finding`, `assistant.update`, or
+`assistant.report`. `buzz assistant publish --help` describes the producer API.
+Its JSON input contains `version: 1`, `summary`, Markdown `body`, `priority`
+(`normal` or `important`), `requiresInput`, and `sources`; `topic` is optional.
+Each source has `label`, optional HTTP(S) `url`, and optional Unix-seconds
+`checkedAt`. Use a stable `--id`, a private `--channel`, and `--prev` for updates.
+`buzz assistant get --id <uuid>` reads the current head after a conflict or
+uncertain write. Personal publishing refuses public channels.
+
+Save/snooze/archive choices are separate, human-signed `assistant.state`
+artifacts. Clients verify their author rather than trusting an `owner` tag.
+Concurrent choices use an exact previous revision; stale choices must be
+reviewed, not silently rebased. Mobile retains encrypted offline reads and
+unconfirmed attention changes. This is **not** a durable offline message outbox.
+Desktop pins remain device-local. Explicit decision feedback/preferences go to
+the owning Hermes profile and its existing memory provider, not another client
+memory store.
+
+**Assistant connection settings** on Today accepts the Hermes server origin,
+profile and dedicated personal-assistant client API token—not an observer token,
+relay credential or model key. Native desktop stores the connection through the
+existing OS SecretStore; Flutter uses secure storage. Browser development keeps
+the connection in memory only. HTTPS is required outside loopback development.
+
+The controls offer explicit approved-tool schema discovery, source/schedule
+preview, revision-checked monitor create/edit/delete, timezone-aware cron,
+generic conditions, findings/evidence, exact-question answers, handled/snooze/
+resume and decision-specific feedback. No MCP tools are selected automatically.
+Failed mutations are not queued or automatically retried; refresh to reconcile
+an unknown outcome. Only explicit server channel IDs open conversations.
+
+Hermes runs remotely with its native Buzz adapter. These controls neither launch
+a local Hermes process nor use a stdio observer bridge. Existing signed reports,
+private conversations and relay schemas are unchanged.
+
+Existing Hermes jobs/feed integrations must publish the typed records; these
+clients do not add bank, social-network or website connectors, monitoring jobs,
+speech transcription, or Android push. **Do not grant write-capable financial
+or account tools based on this UI:** Buzz's ACP permission handler currently
+auto-approves permission requests and is not a human approval bridge. Enforce
+read-only scopes or an independent approval mechanism on the server.
+
+The upstream interface remains selectable at build time:
+`VITE_BUZZ_PERSONAL_ASSISTANT=0` for desktop (export it for the entire Tauri
+build, not just a Vite `.env` file), or
+`--dart-define=BUZZ_PERSONAL_ASSISTANT=false` for Flutter.
+
+---
+
 ## What is this, really?
 
 Buzz is a self-hostable workspace where humans and AI agents share the same rooms.

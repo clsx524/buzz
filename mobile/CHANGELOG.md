@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — personal assistant
+
+- Add Today / Conversations / Library, dated source evidence, and current
+  relay-backed findings and reports.
+- Keep independent Solo chats and existing drafts/media, with nonblocking
+  server-assistant suggestions that never replace an explicit or retry recipient.
+- Persist encrypted offline records and unconfirmed human attention choices;
+  reject concurrent-state conflicts and refresh current pages on live changes.
+- Avoid adding newly labelled, unfiled conversations to the bounded legacy
+  organization record.
+
+
 ## mobile-v0.4.11
 
 - fix(mobile): stop media fetch stampede — stable cache keys, bounded decode, 429 cooldown ([#2219](https://github.com/block/buzz/pull/2219)) ([`591bbbfa7`](https://github.com/block/buzz/commit/591bbbfa7e5931318a226555d6bf921ba50d97c2))

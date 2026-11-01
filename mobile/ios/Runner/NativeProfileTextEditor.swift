@@ -445,6 +445,11 @@ private final class NativeProfileTextEditorViewController:
     chatOptions?["assistants"] = arguments["assistants"]
     chatOptions?["assistantsLoading"] = false
     chatOptions?["assistantError"] = arguments["assistantError"]
+    if selectedAssistant == nil, !fieldsLocked,
+       let suggested = arguments["suggestedAssistant"] as? String,
+       assistants.contains(where: { $0["id"] == suggested }) {
+      selectedAssistant = suggested
+    }
     tableView.reloadSections(IndexSet(integer: 2), with: .none)
     updateNavigation()
   }

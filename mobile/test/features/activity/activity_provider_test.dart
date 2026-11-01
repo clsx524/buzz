@@ -2,6 +2,11 @@ import 'package:buzz/app.dart';
 import 'package:buzz/features/activity/activity_page.dart';
 import 'package:buzz/features/age_gate/age_signal_provider.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/assistant/assistant_provider.dart';
+import 'package:buzz/shared/me/default_agent.dart';
+import 'package:buzz/shared/me/me_assistants.dart';
+import 'package:buzz/shared/me/me_groups.dart';
+import 'package:buzz/shared/me/me_sync.dart';
 import 'package:buzz/shared/theme/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -416,6 +421,13 @@ void main() {
           savedPrefsProvider.overrideWithValue(prefs),
           authProvider.overrideWith(_ShellAuth.new),
           ageSignalProvider.overrideWith(_ShellAge.new),
+          // Keep unrelated personal-shell readers off the live relay fixture.
+          assistantFeedProvider.overrideWith(_EmptyAssistantFeed.new),
+          defaultAgentProvider.overrideWith((ref) => Stream.value(null)),
+          meAssistantsProvider.overrideWith((ref) async => []),
+          meGroupsProvider.overrideWith(
+            (ref) => Stream.value(const MeGroups()),
+          ),
           relayConfigProvider.overrideWith(_FixedRelayConfigNotifier.new),
           myPubkeyProvider.overrideWithValue(self),
           relaySessionProvider.overrideWith(() => session),
@@ -487,6 +499,8 @@ void main() {
       ]);
       await tester.pumpWidget(const SizedBox.shrink());
       container.dispose();
+      await tester.pump();
+      expect(session.hiddenDmSubscriptionBatches, isEmpty);
     },
   );
 
@@ -1184,6 +1198,11 @@ void main() {
       },
     );
   });
+}
+
+class _EmptyAssistantFeed extends AssistantFeedNotifier {
+  @override
+  AssistantFeed build() => const AssistantFeed(loading: false);
 }
 
 class _FixedChannelsNotifier extends ChannelsNotifier {

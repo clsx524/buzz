@@ -31,6 +31,7 @@ import {
   updateChannel,
 } from "@/shared/api/tauri";
 
+import { PERSONAL_ASSISTANT_MODE } from "@/features/personal/config";
 // Adapter: resolves the full channel list without the not-modified short-circuit.
 // Onboarding paths run once and always need fresh data.
 const getChannelsList = (): Promise<Channel[]> =>
@@ -83,6 +84,9 @@ export async function initializeStarterChannels(
     communityScope: string | null;
   },
 ): Promise<ChannelInitResult> {
+  // Personal conversations are created deliberately with a relay-connected
+  // assistant; never seed the stock local Welcome team or public channels.
+  if (PERSONAL_ASSISTANT_MODE) return { ok: true };
   try {
     let starterChannels: Awaited<
       ReturnType<typeof ensureStarterChannels>

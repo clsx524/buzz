@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — personal assistant
+
+- Default desktop and mobile navigation to Today, Conversations and Library;
+  retain independent private Solo histories and server-side assistant selection.
+- Read current findings/reports from relay artifacts, with evidence and separate
+  signed save/archive/snooze state. Reject stale cross-device changes; preserve
+  encrypted mobile reads and unconfirmed choices, and refresh on live updates.
+- Add `buzz assistant publish/list/get`, private-channel publishing checks and
+  explicit revision conflicts. Normalize `hermes-acp` as a zero-argument adapter.
+- Skip local-agent onboarding, team seeding and automatic laptop agent restoration
+  in personal mode. Account-action approvals and speech transcription are not added.
+
+
 ## v0.5.28
 
 ### Desktop and shared changes

@@ -14,7 +14,8 @@ Buzz Relay ──WS──→ buzz-acp ──stdio──→ Your Agent
                                        (send_message, etc.)
 ```
 
-Supports any agent that speaks [ACP](https://agentclientprotocol.com/) over stdio: **goose**, **codex** (via [codex-acp](https://github.com/agentclientprotocol/codex-acp)), and **claude code** (via [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp)).
+Supports agents speaking [ACP](https://agentclientprotocol.com/) over stdio:
+**goose**, **codex-acp**, **claude-agent-acp**, and **hermes-acp**.
 
 ## Prerequisites
 
@@ -51,11 +52,11 @@ BUZZ_RELAY_PRIVATE_KEY=<relay signing key> \
 
 ## Channels
 
-The harness discovers channels by querying the relay with the agent's authenticated identity.
-
-By default, the harness discovers only channels the agent is a **member** of (`GET /api/channels?member=true`). When the agent is added to a new channel, the membership notification subscription auto-subscribes to it.
-
-**Private channels** require explicit membership. The relay doesn't yet have a REST/event API for managing channel members — this is a known gap. For now, use `create_channel` via the Buzz CLI to create new channels (the creator is automatically a member).
+The harness discovers relay-authorized channels and follows membership changes.
+Private channels require explicit membership. The personal Conversations UI
+creates private Solo channels and adds the selected existing assistant; opening
+another conversation does not require another agent identity or harness.
+For scripted membership changes, see `buzz channels add-member --help`.
 
 ## Quick Start (goose)
 
@@ -102,6 +103,39 @@ buzz-acp
 
 Older installs that still expose `claude-code-acp` are also supported. `buzz-acp`
 treats both Claude ACP command names as the same zero-arg runtime.
+
+## Running with Hermes
+
+Run this on the Hermes server, not on each client device. Install `hermes-acp`
+and the `buzz` CLI there. Provision an [owned agent identity](../../docs/owned-agent-discovery.md)
+and supply its `BUZZ_PRIVATE_KEY`, `BUZZ_AUTH_TAG`, and `BUZZ_RELAY_URL` to the
+harness. The owner attestation also supplies the default owner-only inbound gate;
+`BUZZ_ACP_AGENT_OWNER` can supply the inbound owner when no attestation is present,
+but it does not itself certify ownership for client discovery.
+
+```bash
+BUZZ_ACP_AGENT_COMMAND=hermes-acp \
+HERMES_ACP_SKIP_CONFIGURED_MCP=0 \
+buzz-acp --session-policy channel --multiple-event-handling queue
+```
+
+The Hermes adapter takes no implicit `acp` argument. Explicit profile arguments
+remain intact. Setting `HERMES_ACP_SKIP_CONFIGURED_MCP=0` opts into the Hermes
+profile's configured MCP servers; Buzz otherwise skips that startup by default.
+Slow configured servers can affect ACP startup.
+
+Keep exactly one live harness per agent identity and relay. It can serve many
+channel-scoped conversations; increase `--agents` only for concurrent execution.
+This starts a stdio adapter, not a connection to an existing Hermes HTTP gateway.
+Relay history persists, but in-memory ACP session IDs are not crash-resumed.
+The bundled prompt describes `buzz assistant publish` for durable personal
+findings, updates and reports; existing Hermes schedules/connectors remain the
+producers.
+
+**Permission boundary:** the ACP handler auto-approves permission requests.
+Neither `--permission-mode default` nor a chat response constitutes a human
+approval bridge. Keep sensitive integrations read-only or enforce approval
+outside this harness before enabling account-changing actions.
 
 ## Configuration
 

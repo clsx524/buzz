@@ -13,8 +13,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../community/community_storage_test.dart' show FakeSecureStorage;
 import 'package:buzz/features/age_gate/age_signal_provider.dart';
-import 'package:buzz/features/home/home_page.dart';
 import 'package:buzz/shared/auth/auth.dart';
+import 'package:buzz/shared/assistant/assistant_provider.dart';
+import 'package:buzz/shared/me/default_agent.dart';
+import 'package:buzz/shared/me/me_assistants.dart';
+import 'package:buzz/shared/me/me_groups.dart';
+import 'package:buzz/shared/me/me_sync.dart';
 import 'package:buzz/shared/push/dev_push_lease.dart';
 import 'package:buzz/shared/push/push_bootstrap.dart';
 import 'package:buzz/shared/push/push_bridge.dart';
@@ -87,6 +91,13 @@ void main() {
           authProvider.overrideWith(_Auth.new),
           ageSignalProvider.overrideWith(_Age.new),
           relaySessionProvider.overrideWith(_Session.new),
+          // Push setup must not depend on the personal shell's live readers.
+          assistantFeedProvider.overrideWith(_EmptyAssistantFeed.new),
+          defaultAgentProvider.overrideWith((ref) => Stream.value(null)),
+          meAssistantsProvider.overrideWith((ref) async => []),
+          meGroupsProvider.overrideWith(
+            (ref) => Stream.value(const MeGroups()),
+          ),
           activeCommunityProvider.overrideWith((_) async => community),
           currentRelayPushDescriptorProvider.overrideWith(
             (_) async => _descriptor,
@@ -101,7 +112,6 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
-    expect(find.byType(HomePage), findsOneWidget);
     expect(find.byType(Navigator), findsOneWidget);
     expect(tester.takeException(), isNull);
     final container = ProviderScope.containerOf(
@@ -396,6 +406,11 @@ void main() {
       ],
     );
   });
+}
+
+class _EmptyAssistantFeed extends AssistantFeedNotifier {
+  @override
+  AssistantFeed build() => const AssistantFeed(loading: false);
 }
 
 class _Auth extends AuthNotifier {

@@ -5,6 +5,17 @@ Flutter mobile client for Buzz.
 See [VISION_MOBILE.md](../VISION_MOBILE.md) for intended behavior and
 architecture.
 
+This checkout defaults to the personal-assistant **Today / Conversations /
+Library** interface. Conversations remain separate private Solo channels; the
+assistant runs on the server, not on the phone. Reports and save/snooze/archive
+choices use the existing relay artifact API. See the
+[personal mode contract and limitations](../README.md#personal-assistant-mode-in-this-checkout).
+Use `--dart-define=BUZZ_PERSONAL_ASSISTANT=false` to build the upstream navigation.
+The **Ask your assistant** action is available from Today and Library.
+Voice notes are retained; this change does not add speech transcription or
+a durable offline message outbox.
+
+
 ## Optional Builderlab login
 
 `BUZZ_AUTH_DOMAINS` is a comma-separated build-time environment setting, passed

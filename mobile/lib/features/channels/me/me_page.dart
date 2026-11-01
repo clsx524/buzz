@@ -24,6 +24,8 @@ import '../../../shared/me/me_sync.dart';
 import '../../../shared/relay/relay.dart';
 import '../../../shared/me/me_recovery.dart';
 import '../../../shared/me/me_assistants.dart';
+import '../../../shared/me/personal_assistant.dart';
+import '../../../shared/me/default_agent.dart';
 import '../../../shared/theme/theme.dart';
 import '../../../shared/theme/buzz_icons.dart';
 import '../../../shared/widgets/frosted_app_bar.dart';
@@ -47,10 +49,12 @@ class MePage extends HookConsumerWidget {
     this.newChatAction,
     this.newWorkspaceAction,
     this.sliver = false,
+    this.personal = false,
     super.key,
   });
 
   final bool sliver;
+  final bool personal;
   final ValueNotifier<VoidCallback?>? newWorkspaceAction;
 
   /// Publishes the current chat action to the persistent Home footer.
@@ -88,6 +92,14 @@ class MePage extends HookConsumerWidget {
     final channels = ref.watch(channelsProvider);
     final unreadIds = ref.watch(meUnreadChannelIdsProvider);
     final busy = useState(false);
+    final search = useTextEditingController();
+    useListenable(search);
+    final topic = useState<String?>(null);
+    final pageSize = useState(40);
+    useEffect(() {
+      pageSize.value = 40;
+      return null;
+    }, [search.text, topic.value]);
     Future<void> perform(Future<void> Function() action) async {
       if (busy.value) return;
       busy.value = true;
@@ -117,7 +129,11 @@ class MePage extends HookConsumerWidget {
     final VoidCallback? newChat = busy.value || !groups.hasValue
         ? null
         : () => perform(() async {
-            final result = await _showNewMeChat(context, ref);
+            final result = await _showNewMeChat(
+              context,
+              ref,
+              suggestAssistant: personal,
+            );
             if (result == null || !context.mounted) return;
             await Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -168,7 +184,14 @@ class MePage extends HookConsumerWidget {
                     (c) =>
                         c.isMember &&
                         !c.isArchived &&
-                        c.isPersonalChat(viewer, organization.channels),
+                        c.isPersonalChat(viewer, organization.channels) &&
+                        (!personal ||
+                            (c.name.toLowerCase().contains(
+                                  search.text.trim().toLowerCase(),
+                                ) &&
+                                (topic.value == null ||
+                                    organization.assignments[c.id] ==
+                                        topic.value))),
                   )
                   .toList()
                 ..sort(
@@ -176,6 +199,10 @@ class MePage extends HookConsumerWidget {
                     a.lastMessageAt ?? a.createdAt,
                   ),
                 );
+          final totalVisible = visible.length;
+          if (personal && visible.length > pageSize.value) {
+            visible.removeRange(pageSize.value, visible.length);
+          }
           Widget row(Channel channel) => _MeChatRow(
             channelId: channel.id,
             name: channel.name,
@@ -188,6 +215,55 @@ class MePage extends HookConsumerWidget {
             ),
           );
           final inventorySlivers = <Widget>[
+            if (personal)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(Grid.gutter),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: search,
+                        decoration: const InputDecoration(
+                          labelText: 'Find a conversation',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                      ),
+                      if (organization.groups.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: Grid.xs),
+                          child: DropdownButtonFormField<String>(
+                            initialValue: topic.value ?? '',
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Topic / project',
+                            ),
+                            items: [
+                              const DropdownMenuItem(
+                                value: '',
+                                child: Text('All conversations'),
+                              ),
+                              for (final group in organization.groups)
+                                DropdownMenuItem(
+                                  value: group['id'] as String,
+                                  child: Text(group['name'] as String),
+                                ),
+                            ],
+                            onChanged: (value) =>
+                                topic.value = value == '' ? null : value,
+                          ),
+                        ),
+                      if (totalVisible == 0 && all.isNotEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: Grid.md),
+                          child: Text(
+                            'No matching conversations. Try another name or topic.',
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             SliverPadding(
               padding: EdgeInsets.fromLTRB(
                 Grid.gutter - Grid.xxs,
@@ -216,7 +292,10 @@ class MePage extends HookConsumerWidget {
                         ],
                       ),
                     ),
-                  for (final group in organization.groups) ...[
+                  for (final group
+                      in personal
+                          ? <Map<String, dynamic>>[]
+                          : organization.groups) ...[
                     if (group != organization.groups.first)
                       const SizedBox(height: Grid.twelve),
                     MeSection(
@@ -236,15 +315,17 @@ class MePage extends HookConsumerWidget {
                       ],
                     ),
                   ],
-                  if (organization.groups.isNotEmpty)
+                  if (!personal && organization.groups.isNotEmpty)
                     const SizedBox(height: Grid.twelve),
                   if (visible.isNotEmpty || organization.groups.isNotEmpty)
                     MeSection(
                       key: const ValueKey('me-ungrouped-chats'),
-                      label: 'Chats',
+                      label: personal ? 'Recent conversations' : 'Chats',
                       children: [
                         for (final channel in visible.where(
-                          (c) => !organization.assignments.containsKey(c.id),
+                          (c) =>
+                              personal ||
+                              !organization.assignments.containsKey(c.id),
                         ))
                           row(channel),
                         if (!visible.any(
@@ -267,12 +348,29 @@ class MePage extends HookConsumerWidget {
                   child: Center(child: _MeEmptyState(onNewChat: newChat)),
                 ),
               ),
-            if (sliver && visible.isEmpty && organization.groups.isEmpty)
+            if (sliver &&
+                visible.isEmpty &&
+                organization.groups.isEmpty &&
+                search.text.isEmpty)
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.all(Grid.gutter),
                   child: _MeEmptyState(onNewChat: newChat),
                 ),
+              ),
+            if (personal && totalVisible > visible.length)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(Grid.gutter),
+                  child: OutlinedButton(
+                    onPressed: () => pageSize.value += 40,
+                    child: const Text('Show more conversations'),
+                  ),
+                ),
+              ),
+            if (personal)
+              const SliverToBoxAdapter(
+                child: SizedBox(height: Grid.xxl + Grid.md),
               ),
           ];
           if (sliver) return SliverMainAxisGroup(slivers: inventorySlivers);

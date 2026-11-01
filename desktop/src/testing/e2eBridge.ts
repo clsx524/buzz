@@ -6611,7 +6611,16 @@ async function relayJsonRequest<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${getRelayHttpUrl(config)}${path}`, {
+  const url = `${getRelayHttpUrl(config)}${path}`;
+  const tags = [["u", url], ["method", init.method ?? "GET"]];
+  if (typeof init.body === "string") {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(init.body));
+    tags.push(["payload", bytesToHex(new Uint8Array(digest))]);
+  }
+  const auth = await signWithIdentity(identity, { kind: 27235, content: "", tags });
+  headers.set("Authorization", `Nostr ${btoa(JSON.stringify(auth))}`);
+
+  const response = await fetch(url, {
     ...init,
     headers,
   });
@@ -6636,16 +6645,10 @@ async function relayQuery(
     throw new Error(P_GATED_REJECTION_MESSAGE);
   }
 
-  const response = await fetch(`${getRelayHttpUrl(config)}/query`, {
+  return relayJsonRequest<RelayEvent[]>(config, "/query", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Pubkey": identity.pubkey,
-    },
     body: JSON.stringify(filters),
   });
-  await assertOk(response);
-  return response.json() as Promise<RelayEvent[]>;
 }
 
 async function submitSignedEvent(
@@ -14729,6 +14732,20 @@ export function maybeInstallE2eTauriMocks() {
               ) as RelayEvent,
           ),
         );
+      case "query_relay_events": {
+        if (!identity) throw new Error("Artifact queries require a live relay identity.");
+        const args = payload as {
+          filters: Array<Record<string, unknown>>;
+          expectedRelayUrl: string;
+          expectedSignerPubkey: string;
+        };
+        assertExpectedRelayScope(args.expectedRelayUrl, activeConfig);
+        assertExpectedSigner(args.expectedSignerPubkey, activeConfig);
+        const events = await relayQuery(activeConfig, args.filters);
+        assertExpectedRelayScope(args.expectedRelayUrl, getConfig());
+        assertExpectedSigner(args.expectedSignerPubkey, getConfig());
+        return events;
+      }
       case "sign_event":
         window.__BUZZ_E2E_SIGNED_EVENTS__?.push({
           content: (payload as { content: string }).content,

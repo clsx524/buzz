@@ -23,6 +23,10 @@ import 'features/channels/channels_provider.dart';
 import 'features/channels/unread_badge/unread_badge_provider.dart';
 import 'features/home/home_page.dart';
 import 'features/channels/me/me_page.dart';
+import 'features/home/personal_home_page.dart';
+import 'features/search/search_page.dart';
+import 'shared/assistant/assistant_item.dart';
+import 'shared/me/me_sync.dart';
 import 'features/channels/me/me_unread_provider.dart';
 import 'features/invites/invite_create_page.dart';
 import 'features/invites/invite_join_provider.dart';
@@ -274,6 +278,38 @@ InviteJoinRecovery buildMobileInviteJoinRecovery(
 
 final _mobileRootNavigatorKey = GlobalKey<NavigatorState>();
 
+Future<void> _openPersonalConversation(
+  BuildContext context,
+  WidgetRef ref,
+  String channelId,
+  String? root,
+) async {
+  final scope = ref.read(relayConfigProvider);
+  try {
+    final channel = await ref.read(channelActionsProvider).findJoinedChannel(channelId);
+    if (!context.mounted || ref.read(relayConfigProvider) != scope) return;
+    if (channel == null) {
+      throw StateError('This conversation is unavailable or no longer accessible.');
+    }
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ChannelDetailPage(
+        channel: channel,
+        personalChat: channel.isPersonalChat(
+          ref.read(myPubkeyProvider),
+          ref.read(meGroupsProvider).value?.channels ?? const [],
+        ),
+        initialMessageId: root,
+      ),
+    ));
+  } catch (error) {
+    if (context.mounted && ref.read(relayConfigProvider) == scope) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Couldn’t open the conversation. $error'),
+      ));
+    }
+  }
+}
+
 class App extends HookConsumerWidget {
   const App({super.key});
 
@@ -389,22 +425,45 @@ class App extends HookConsumerWidget {
         data: (state) => switch (state.status) {
           AuthStatus.authenticated => HostedAppGate(
             authenticated: true,
-            child: HomePage(
-              onAgents: showAgents,
-              defaultAgentBuilder: (context) => DefaultAgentLauncher(
-                onChooseAgent: () => showAgents(context),
-              ),
-              mePageBuilder: (_, chat, workspace) => MePage(
-                sliver: true,
-                newChatAction: chat,
-                newWorkspaceAction: workspace,
-              ),
-              settingsPageBuilder: _buildSettingsPage,
-              profilePageBuilder: (_) =>
-                  const _SettingsPageContent(embedded: true),
-              communityInvitePageBuilder: (_) => const CommunityInvitePage(),
-              communityAppearancePageBuilder: (_) => const ThemePickerPage(),
-            ),
+            child: personalAssistantMode
+                ? PersonalHomePage(
+                    conversationsBuilder: (_, chat, project) => MePage(
+                      sliver: true,
+                      personal: true,
+                      newChatAction: chat,
+                      newWorkspaceAction: project,
+                    ),
+                    settingsPageBuilder: _buildSettingsPage,
+                    onAgents: showAgents,
+                    onSearch: (context) => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SearchPage(),
+                      ),
+                    ),
+                    onConversation: (context, item) => _openPersonalConversation(
+                      context, ref, item.channelId, item.event.getTagValue('root'),
+                    ),
+                    onControlConversation: (context, channelId, root) =>
+                      _openPersonalConversation(context, ref, channelId, root),
+                  )
+                : HomePage(
+                    onAgents: showAgents,
+                    defaultAgentBuilder: (context) => DefaultAgentLauncher(
+                      onChooseAgent: () => showAgents(context),
+                    ),
+                    mePageBuilder: (_, chat, workspace) => MePage(
+                      sliver: true,
+                      newChatAction: chat,
+                      newWorkspaceAction: workspace,
+                    ),
+                    settingsPageBuilder: _buildSettingsPage,
+                    profilePageBuilder: (_) =>
+                        const _SettingsPageContent(embedded: true),
+                    communityInvitePageBuilder: (_) =>
+                        const CommunityInvitePage(),
+                    communityAppearancePageBuilder: (_) =>
+                        const ThemePickerPage(),
+                  ),
           ),
           _ => const HostedAppGate(
             authenticated: false,

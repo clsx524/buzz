@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import {
   type QueryClient,
   useMutation,
@@ -80,6 +80,9 @@ import {
   KIND_STREAM_MESSAGE,
   KIND_SYSTEM_MESSAGE,
 } from "@/shared/constants/kinds";
+import { PERSONAL_ASSISTANT_MODE } from "@/features/personal/config";
+import { personalMessageRecipient } from "@/features/personal/conversations";
+import { useCommunities } from "@/features/communities/useCommunities";
 
 type MessageQueryContext = {
   optimisticId: string;
@@ -478,6 +481,14 @@ export function useSendMessageMutation(
   identity: Identity | undefined,
 ) {
   const queryClient = useQueryClient();
+  const { activeCommunity } = useCommunities();
+  const personalSendAlive = useRef(true);
+  useEffect(() => {
+    personalSendAlive.current = true;
+    return () => {
+      personalSendAlive.current = false;
+    };
+  }, []);
 
   return useMutation<
     RelayEvent,
@@ -532,6 +543,25 @@ export function useSendMessageMutation(
 
       if (!identity) {
         throw new Error("No identity available for sending messages.");
+      }
+      if (PERSONAL_ASSISTANT_MODE && !mentionPubkeys?.length) {
+        const recipient = await personalMessageRecipient(
+          effectiveChannel,
+          identity.pubkey,
+          activeCommunity?.relayUrl ?? "",
+          queryClient.getQueryData<Channel[]>(channelsQueryKey) ?? [],
+        );
+        if (!personalSendAlive.current)
+          throw new Error(
+            "Conversation or community changed. Retry in the original conversation.",
+          );
+        if (recipient) {
+          mentionPubkeys = [recipient];
+          mediaTags = [
+            ...(mediaTags ?? []),
+            ["mention", recipient, "agent-address"],
+          ];
+        }
       }
 
       // `mediaTags` arrives as the merged outgoing tag set (imeta + NIP-30

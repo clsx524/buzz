@@ -452,8 +452,12 @@ pub fn run() {
             // would race React initialization and send agents whose saved record
             // has no relay override to the localhost fallback. Preserve the
             // boot-time repos and identity recovery safety gates by only marking
-            // restoration pending when both allow it.
-            if restore_agents && !recovery_mode {
+            // restoration pending when both allow it. Personal mode uses the
+            // server assistant and must not restore laptop-hosted harnesses.
+            if restore_agents
+                && !recovery_mode
+                && option_env!("VITE_BUZZ_PERSONAL_ASSISTANT") == Some("0")
+            {
                 state
                     .managed_agent_restore_pending
                     .store(true, Ordering::Release);
@@ -559,6 +563,9 @@ pub fn run() {
             title_bar_double_click,
             get_identity,
             get_nsec,
+            load_personal_assistant_connection,
+            save_personal_assistant_connection,
+            clear_personal_assistant_connection,
             generate_backup_passphrase,
             create_ncryptsec_backup,
             verify_ncryptsec_backup,
@@ -617,6 +624,7 @@ pub fn run() {
             connect_acp_runtime,
             discover_managed_agent_prereqs,
             sign_event,
+            query_relay_events,
             sign_nostr_identity_binding,
             sign_out,
             decrypt_observer_event,

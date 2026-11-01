@@ -33,6 +33,27 @@ void main() {
       'buzz-me-kit-v1:https%3A%2F%2Fbuzz.block.builderlab.xyz:groups:me',
     );
   });
+  test('labelled unfiled chats do not grow the bounded legacy record', () {
+    final original = MeGroups.decode(jsonEncode(record()), origin);
+    var groups = original;
+    for (var i = 0; i < 2000; i++) {
+      groups = groups.place(
+        '${i.toRadixString(16).padLeft(8, '0')}-2222-4222-8222-222222222222',
+        labelled: true,
+      );
+    }
+    expect(groups.encode(origin), original.encode(origin));
+    const fresh = '22222222-2222-4222-8222-222222222222';
+    final filed = groups.place(fresh, group: 'project-one', labelled: true);
+    expect(filed.assignments[fresh], 'project-one');
+    expect(filed.channels, [channel]);
+    expect(MeGroups.decode(filed.encode(origin), origin).channels, [channel]);
+    expect(groups.place(fresh).channels, [channel, fresh]);
+    expect(
+      () => groups.place(fresh, group: 'missing', labelled: true),
+      throwsStateError,
+    );
+  });
   test('rejects another community and independent Messages organization', () {
     expect(
       () => MeGroups.decode(jsonEncode(record()), 'https://other.test'),

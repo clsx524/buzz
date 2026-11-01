@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "viewer": "1111111111111111111111111111111111111111111111111111111111111111",
+  "itemId": "22222222-2222-4222-8222-222222222222",
+  "channelId": "33333333-3333-4333-8333-333333333333",
+  "stateId": "100ec18c-ad8d-5195-9eaf-5b992c6497a6",
+  "item": {
+    "version": 1,
+    "summary": "Two transactions have matching amounts and merchant names.",
+    "body": "These could be separate purchases. Review the source transactions before taking action.",
+    "topic": "Household finances",
+    "priority": "important",
+    "requiresInput": true,
+    "sources": [
+      {
+        "label": "Card transactions",
+        "url": "https://example.com/transactions",
+        "checkedAt": 1793404800
+      }
+    ]
+  },
+  "state": {
+    "version": 1,
+    "status": "snoozed",
+    "saved": true,
+    "snoozedUntil": 1793491200
+  }
+}
