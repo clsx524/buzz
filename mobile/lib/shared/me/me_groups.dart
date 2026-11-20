@@ -88,19 +88,18 @@ class MeGroups {
     return result;
   }
 
-  /// Label-authoritative chats need no legacy membership entry. Preserve old
-  /// memberships; only project assignments belong in this bounded record.
-  MeGroups place(String channel, {String? group, bool labelled = false}) {
+  MeGroups place(String channel, {String? group, bool clearGroup = false}) {
     if (group != null && !groups.any((g) => g['id'] == group)) {
       throw StateError('This project changed. Refresh and try again.');
     }
     return MeGroups(
       groups: groups,
-      assignments: {...assignments, channel: ?group},
-      channels: [
-        ...channels,
-        if (!labelled && !channels.contains(channel)) channel,
-      ],
+      assignments: {
+        for (final entry in assignments.entries)
+          if (!clearGroup || entry.key != channel) entry.key: entry.value,
+        channel: ?group,
+      },
+      channels: [...channels, if (!channels.contains(channel)) channel],
     );
   }
 }

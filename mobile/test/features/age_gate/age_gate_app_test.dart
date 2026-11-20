@@ -1,4 +1,6 @@
 import 'dart:async';
+
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:convert';
 
 import 'package:buzz/app.dart';
@@ -6,13 +8,9 @@ import 'package:buzz/features/age_gate/age_restriction_page.dart';
 import 'package:buzz/features/age_gate/age_signal_push_bootstrap.dart';
 import 'package:buzz/features/age_gate/age_signal_provider.dart';
 import 'package:buzz/features/channels/unread_badge/unread_badge_provider.dart';
+import 'package:buzz/features/home/home_page.dart';
 import 'package:buzz/features/pairing/pairing_provider.dart';
 import 'package:buzz/shared/auth/auth.dart';
-import 'package:buzz/shared/assistant/assistant_provider.dart';
-import 'package:buzz/shared/me/default_agent.dart';
-import 'package:buzz/shared/me/me_assistants.dart';
-import 'package:buzz/shared/me/me_groups.dart';
-import 'package:buzz/shared/me/me_sync.dart';
 import 'package:buzz/shared/huddle/huddle.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import '../../shared/community/community_storage_test.dart'
@@ -28,6 +26,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
   const appBadgeChannel = MethodChannel('app_badge_plus');
 
   tearDown(() {
@@ -197,6 +196,7 @@ void main() {
     await tester.pump();
 
     expect(find.byType(AgeRestrictionPage), findsOneWidget);
+    expect(find.byType(HomePage), findsNothing);
   });
 
   testWidgets('clears the app badge only after a confirmed restriction', (
@@ -262,13 +262,6 @@ void main() {
           overrides: [
             authProvider.overrideWith(() => _AuthenticatedAuthNotifier()),
             relaySessionProvider.overrideWith(() => relaySession),
-            // These readers are unrelated to age and push lifecycle behavior.
-            assistantFeedProvider.overrideWith(_EmptyAssistantFeed.new),
-            defaultAgentProvider.overrideWith((ref) => Stream.value(null)),
-            meAssistantsProvider.overrideWith((ref) async => []),
-            meGroupsProvider.overrideWith(
-              (ref) => Stream.value(const MeGroups()),
-            ),
             ageAllowedNotificationRestorerProvider.overrideWithValue(() async {
               snapshotRestorations += 1;
               if (snapshotRestorations == 1) {
@@ -288,7 +281,9 @@ void main() {
       await tester.pump();
 
       expect(find.bySemanticsLabel('Checking age eligibility'), findsNothing);
-      expect(find.byType(Navigator), findsOneWidget);
+      expect(find.byType(HomePage), findsOneWidget);
+      // Home may also host a nested conversation navigator.
+      expect(find.byType(MaterialApp), findsOneWidget);
       expect(relaySession.builds, 1);
       expect(requests, ageGatingEnabled ? 1 : 0);
       await tester.pump();
@@ -317,12 +312,6 @@ void main() {
           overrides: [
             authProvider.overrideWith(() => _AuthenticatedAuthNotifier()),
             relaySessionProvider.overrideWith(() => relaySession),
-            assistantFeedProvider.overrideWith(_EmptyAssistantFeed.new),
-            defaultAgentProvider.overrideWith((ref) => Stream.value(null)),
-            meAssistantsProvider.overrideWith((ref) async => []),
-            meGroupsProvider.overrideWith(
-              (ref) => Stream.value(const MeGroups()),
-            ),
             ageSignalProvider.overrideWith(
               () =>
                   AgeSignalNotifier(requestTimeout: const Duration(seconds: 1)),
@@ -339,7 +328,7 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.byType(AgeRestrictionPage), findsNothing);
+      expect(find.byType(HomePage), findsOneWidget);
       expect(find.byType(BuzzPushBootstrap), findsOneWidget);
       expect(relaySession.builds, 1);
       expect(requests, 1);
@@ -365,6 +354,7 @@ void main() {
         find.byType(AgeRestrictionPage),
         restricted ? findsOneWidget : findsNothing,
       );
+      expect(find.byType(HomePage), restricted ? findsNothing : findsOneWidget);
       expect(
         find.byType(BuzzPushBootstrap),
         restricted ? findsNothing : findsOneWidget,
@@ -472,11 +462,6 @@ void main() {
       expect(scheduledMaintenance, isEmpty);
     },
   );
-}
-
-class _EmptyAssistantFeed extends AssistantFeedNotifier {
-  @override
-  AssistantFeed build() => const AssistantFeed(loading: false);
 }
 
 class _AuthenticatedAuthNotifier extends AuthNotifier {

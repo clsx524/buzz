@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
 import 'package:buzz/shared/crypto/event_signing.dart';
 import 'package:http/http.dart' as http;
+import 'package:buzz/shared/http/app_http_client.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
 import '../crypto/nip44.dart';
@@ -243,10 +245,18 @@ Future<BuzzPushLeaseDescriptor> fetchBuzzPushLeaseDescriptor(
     throw FormatException('Invalid relay HTTP URL: $relayBaseUrl');
   }
   final requestUri = uri.resolve('/');
-  final ownedClient = client ?? http.Client();
+  final ownedClient = client ?? newAppHttpClient();
+  // Closing a client does not stop a request on a shared session.
+  final abort = Completer<void>();
   try {
+    final request = http.AbortableRequest(
+      'GET',
+      requestUri,
+      abortTrigger: abort.future,
+    )..headers['Accept'] = 'application/nostr+json';
     final response = await ownedClient
-        .get(requestUri, headers: const {'Accept': 'application/nostr+json'})
+        .send(request)
+        .then(http.Response.fromStream)
         .timeout(timeout);
     if (response.statusCode != 200) {
       throw StateError(
@@ -259,6 +269,7 @@ Future<BuzzPushLeaseDescriptor> fetchBuzzPushLeaseDescriptor(
     }
     return BuzzPushLeaseDescriptor.fromRelayInformation(decoded);
   } finally {
+    abort.complete();
     if (client == null) ownedClient.close();
   }
 }
@@ -474,24 +485,6 @@ Future<BuzzPushLeasePublication> publishBuzzPushLeaseTombstone({
     plaintext: plaintext,
   );
 }
-
-Future<BuzzPushLeasePublication> publishBuzzPushLeaseTombstoneThroughRelay({
-  required BuzzPushLeaseDescriptor descriptor,
-  required String installationId,
-  required int generation,
-  required String nsec,
-  required String memberPubkey,
-  required SignedEventRelay relay,
-  DateTime Function() now = DateTime.now,
-}) => publishBuzzPushLeaseTombstone(
-  descriptor: descriptor,
-  installationId: installationId,
-  generation: generation,
-  nsec: nsec,
-  memberPubkey: memberPubkey,
-  submit: relay.submit,
-  now: now,
-);
 
 void _validateGrant(
   BuzzPushEndpointGrant grant,

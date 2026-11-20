@@ -1,8 +1,11 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:uuid/uuid.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../hosted/organization_environment.dart';
+import '../hosted/known_community_address.dart';
 import '../storage/secure_storage.dart';
 import '../storage/serial_queue.dart';
 
@@ -22,12 +25,45 @@ class CommunityStorage {
 
   final FlutterSecureStorage _secure;
 
-  CommunityStorage({FlutterSecureStorage? secure})
-    : _secure = secure ?? communitySecureStorage;
+  /// Whether this build shows a saved community. Others stay stored, with
+  /// their keys, for a build that can reach them.
+  final bool Function(Community community) _visible;
 
-  /// Load all communities. On first call, migrates legacy single-community
-  /// credentials if present.
-  Future<List<Community>> loadAll() async {
+  CommunityStorage({
+    FlutterSecureStorage? secure,
+    bool Function(Community community)? visible,
+  }) : _secure = secure ?? communitySecureStorage,
+       _visible = visible ?? reachableInBuild;
+
+  /// An internal build reaches only its organization's community.
+  static bool reachableInBuild(Community community) =>
+      !OrganizationEnvironment.enabled ||
+      OrganizationEnvironment.protects(Uri.parse(community.relayUrl));
+
+  /// Load all communities this build shows. On first call, migrates legacy
+  /// single-community credentials if present.
+  Future<List<Community>> loadAll() async => (await _loadStored())
+      .where((c) => _visible(c) && !c.accountSyncRemoved)
+      .toList();
+
+  /// Device records and credential-free removal intents for account sync.
+  Future<List<Community>> loadForAccountSync() async =>
+      (await _loadStored()).where(_visible).toList();
+
+  /// Retire only the acknowledged revision; a newer intent survives.
+  Future<void> acknowledgeRemoval(String revision) =>
+      _pendingInvites.run(() async {
+        final all = await _loadStored();
+        all.removeWhere(
+          (c) => c.accountSyncRemoved && c.accountSyncRevision == revision,
+        );
+        await _secure.write(
+          key: _keyCommunities,
+          value: jsonEncode(all.map((c) => c.toJson()).toList()),
+        );
+      });
+
+  Future<List<Community>> _loadStored() async {
     final raw = await _secure.read(key: _keyCommunities);
     if (raw != null) return _decodeList(raw);
 
@@ -122,7 +158,7 @@ class CommunityStorage {
     }
   });
 
-  Future<void> save(Community community) async {
+  Future<void> save(Community community) => _pendingInvites.run(() async {
     final all = await loadAll();
     final index = all.indexWhere((w) => w.id == community.id);
     if (index >= 0) {
@@ -131,12 +167,18 @@ class CommunityStorage {
       all.add(community);
     }
     await _saveList(all);
-  }
+  });
 
   /// Replaces the complete stored community list in one secure-storage write.
-  Future<void> saveAll(List<Community> communities) => _saveList(communities);
+  Future<void> saveAll(List<Community> communities) =>
+      _pendingInvites.run(() => _saveList(communities));
 
-  Future<void> remove(String id) => _pendingInvites.run(() async {
+  /// Remove locally and retain the confirmed account edit in the same write.
+  /// Other identities owned by this account keep its destination entry alive.
+  Future<void> remove(
+    String id, {
+    String? accountSyncOwner,
+  }) => _pendingInvites.run(() async {
     final all = await loadAll();
     final removedKeys = all
         .where((item) => item.id == id)
@@ -157,7 +199,34 @@ class CommunityStorage {
         }
       }
     }
+    final removed = all.where((c) => c.id == id).firstOrNull;
     all.removeWhere((w) => w.id == id);
+    final removedUrl = removed == null
+        ? null
+        : knownCommunityAddress(removed.relayUrl);
+    // Another identity owned by this account retains its destination row.
+    // Otherwise commit deletion and remote intent in the same storage write.
+    if (removed != null &&
+        removedUrl != null &&
+        accountSyncOwner != null &&
+        !all.any(
+          (c) =>
+              !c.accountSyncRemoved &&
+              c.accountSyncOwner == accountSyncOwner &&
+              knownCommunityAddress(c.relayUrl) == removedUrl,
+        )) {
+      all.add(
+        Community(
+          id: 'account-removal-${const Uuid().v4()}',
+          name: removed.name,
+          relayUrl: removedUrl,
+          addedAt: DateTime.now(),
+          accountSyncOwner: accountSyncOwner,
+          accountSyncRevision: const Uuid().v4(),
+          accountSyncRemoved: true,
+        ),
+      );
+    }
     await _saveList(all);
   });
 
@@ -180,8 +249,25 @@ class CommunityStorage {
         .toList();
   }
 
+  /// Replaces the communities this build shows, keeping the others.
   Future<void> _saveList(List<Community> communities) async {
-    final json = jsonEncode(communities.map((item) => item.toJson()).toList());
+    final raw = await _secure.read(key: _keyCommunities);
+    final hidden = raw == null
+        ? const <Community>[]
+        : _decodeList(raw).where(
+            (item) =>
+                !_visible(item) ||
+                (item.accountSyncRemoved &&
+                    !communities.any(
+                      (c) =>
+                          c.accountSyncOwner == item.accountSyncOwner &&
+                          knownCommunityAddress(c.relayUrl) ==
+                              knownCommunityAddress(item.relayUrl),
+                    )),
+          );
+    final json = jsonEncode(
+      [...hidden, ...communities].map((item) => item.toJson()).toList(),
+    );
     await _secure.write(key: _keyCommunities, value: json);
   }
 }

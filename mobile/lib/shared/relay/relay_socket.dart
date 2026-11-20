@@ -28,6 +28,16 @@ class RelayAuthRejectedException implements Exception {
   String toString() => 'Relay authentication rejected: $message';
 }
 
+/// The relay answered an EVENT with OK false, so it wasn't stored.
+class RelayEventRejectedException implements Exception {
+  final String message;
+
+  const RelayEventRejectedException(this.message);
+
+  @override
+  String toString() => 'Exception: $message';
+}
+
 Exception classifyRelayAuthFailure(String message) {
   if (message.startsWith('error:')) return Exception(message);
   return RelayAuthRejectedException(message);
@@ -39,6 +49,9 @@ class RelaySocket {
 
   @visibleForTesting
   static Duration debugPingInterval = pingInterval;
+
+  @visibleForTesting
+  static Duration debugConnectTimeout = relayWebSocketConnectTimeout;
 
   final String _wsUrl;
   final String? _nsec;
@@ -86,10 +99,14 @@ class RelaySocket {
           Uri.parse(_wsUrl),
           headers: headers,
           pingInterval: debugPingInterval,
+          connectTimeout: debugConnectTimeout,
         ),
       );
       await _channel!.ready;
     } catch (e) {
+      // A channel that never opened never completes sink.close(), so a later
+      // disconnect() must not await it.
+      _channel = null;
       _state = SocketState.disconnected;
       _onDisconnected(e);
       return;
@@ -146,13 +163,17 @@ class RelaySocket {
     _channel?.sink.add(jsonEncode(payload));
   }
 
-  /// Gracefully close the connection.
+  /// Upper bound on a graceful close. A channel whose upgrade is still pending
+  /// never completes sink.close(), and callers await disconnect() in cleanup.
+  static const closeTimeout = Duration(seconds: 2);
+
+  /// Gracefully close the connection, waiting at most [closeTimeout].
   Future<void> disconnect() async {
     _resetConnection();
     final channel = _channel;
     _channel = null;
     if (channel != null) {
-      await channel.sink.close();
+      await channel.sink.close().timeout(closeTimeout, onTimeout: () {});
     }
   }
 

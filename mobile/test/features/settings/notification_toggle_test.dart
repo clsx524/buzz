@@ -97,7 +97,8 @@ void main() {
         (call) async => switch (call.method) {
           'enrollPush' => grant,
           'endpointGrants' => [grant],
-          'startRegistration' || 'syncPushSnapshot' => null,
+          'startRegistration' ||
+          'syncPushSnapshot' ||
           'takePendingNotificationResponse' => null,
           _ => throw StateError('Unexpected native call ${call.method}'),
         },
@@ -172,9 +173,6 @@ void main() {
               return _descriptor;
             }),
             appLifecycleProvider.overrideWith(_Lifecycle.new),
-            buzzPushAuthorizationStatusReaderProvider.overrideWithValue(
-              () async => BuzzPushAuthorizationStatus.denied,
-            ),
           ],
           child: BuzzPushBootstrap(
             child: MaterialApp(
@@ -336,6 +334,7 @@ class _Connected extends RelaySessionNotifier {
   Future<NostrEvent> publish(
     NostrEvent event, {
     Duration timeout = const Duration(seconds: 8),
+    Future<bool> Function()? mayPublish,
   }) async {
     expect(event.kind, buzzPushLeaseKind);
     final plaintext = nip44Decrypt(

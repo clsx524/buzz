@@ -1,4 +1,7 @@
+import 'dart:collection';
+
 import '../../../shared/read_state/read_state_format.dart';
+import '../../../shared/relay/nostr_models.dart';
 
 class ObservedUnreadEvent {
   final String id;
@@ -11,6 +14,10 @@ class ObservedUnreadEvent {
   /// `activity:<channel>` reads this event (see `readByChannelCatchUp`).
   final bool channelCatchUp;
 
+  /// Reply payload for Activity's existing thread rows. Retained in the same
+  /// bounded registry as its unread evidence, so eviction and deletion agree.
+  final NostrEvent? threadReply;
+
   const ObservedUnreadEvent({
     required this.id,
     required this.createdAt,
@@ -19,7 +26,38 @@ class ObservedUnreadEvent {
     required this.countsTowardBadge,
     required this.countsTowardAppBadge,
     this.channelCatchUp = false,
+    this.threadReply,
   });
+}
+
+/// Per-channel change stamps for the observed unread registry. Every add,
+/// eviction, deletion or clear of a channel's events must [touch] it, so
+/// readers can reuse work derived from an unchanged channel.
+class ObservedUnreadRevisions {
+  int _next = 0;
+  int _floor = 0;
+  final Map<String, int> _byChannel = {};
+
+  /// Changes whenever [channelId]'s observed events may have changed.
+  int of(String channelId) => _byChannel[channelId] ?? _floor;
+
+  void touch(String channelId) => _byChannel[channelId] = ++_next;
+
+  void touchAll() {
+    _byChannel.clear();
+    _floor = ++_next;
+  }
+}
+
+/// Observed unread events by channel, with the stamp that says when a
+/// channel's events last changed. Only a view carrying stamps may be
+/// memoized against; a plain map is always read in full.
+class ObservedUnreadSnapshot
+    extends UnmodifiableMapView<String, Map<String, ObservedUnreadEvent>> {
+  ObservedUnreadSnapshot(super.map, this.revisionOf);
+
+  /// See [ObservedUnreadRevisions.of].
+  final int Function(String channelId) revisionOf;
 }
 
 ObservedUnreadEvent makeObservedUnreadEvent({
@@ -29,6 +67,7 @@ ObservedUnreadEvent makeObservedUnreadEvent({
   required bool highPriority,
   required String? channelType,
   required bool isThreadedReply,
+  NostrEvent? threadReply,
 }) {
   final isDm = channelType == 'dm';
   return ObservedUnreadEvent(
@@ -43,6 +82,7 @@ ObservedUnreadEvent makeObservedUnreadEvent({
       isReply: isThreadedReply,
       highPriority: highPriority,
     ),
+    threadReply: threadReply,
   );
 }
 

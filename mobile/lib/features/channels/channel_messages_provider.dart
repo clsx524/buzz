@@ -39,8 +39,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   void Function()? _unsubscribe;
   bool _reachedOldest = false;
   bool _initInFlight = false;
+  Future<bool>? _olderInFlight;
   bool _usingChannelWindow = false;
-  NostrEvent? _legacyHistoryCursor;
+  ChannelPageCursor? _legacyHistoryCursor;
   bool _initialWindowQueryInFlight = false;
   int _initVersion = 0;
   ChannelWindowStore _windowStore = const ChannelWindowStore.empty();
@@ -66,6 +67,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   final Map<String, String> _localReplyRoots = {};
   final Map<String, ChannelWindowThreadSummary> _queryThreadSummaries = {};
   final Map<String, ChannelWindowThreadSummary> _overflowFloors = {};
+
+  /// Thread summaries from the window a reconnect discarded. They stand,
+  /// below every fresher source, until the replacement history lands, so
+  /// reply counts don't blink off during the catch-up.
+  Map<String, ChannelWindowThreadSummary> _reconnectSummaries = const {};
   final Map<String, int> _threadQueryVersions = {};
   final Map<String, int> _threadEvidenceVersions = {};
   int _threadQuerySerial = 0;
@@ -112,6 +118,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   /// empty value returned while the relay is not yet connected.
   bool get hasLoadedMessages => _lastKnownMessages != null;
 
+  /// Whether a loaded timeline is resubscribing and fetching its newest
+  /// history, as after a reconnect, to become current again.
+  bool get isCatchingUp => _initInFlight && hasLoadedMessages;
+
   Map<String, ChannelWindowThreadSummary> get threadSummaries => {
     for (final entry in _baseThreadSummaries.entries)
       entry.key: _deletionSummaryUncertainty.containsKey(entry.key)
@@ -132,6 +142,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   }
 
   Map<String, ChannelWindowThreadSummary> get _baseThreadSummaries => {
+    ..._reconnectSummaries,
     ...channelWindowThreadSummaries(_windowStore),
     ..._queryThreadSummaries,
     ..._overflowFloors,
@@ -186,6 +197,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     }
 
     _reachedOldest = false;
+    if (_windowStore.pages.isNotEmpty) {
+      _reconnectSummaries = channelWindowThreadSummaries(_windowStore);
+    }
     _windowStore = const ChannelWindowStore.empty();
     _notices.clear();
     _noticeAux.clear();
@@ -246,7 +260,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       final historyVersion = ++_threadQuerySerial;
       final history = await _fetchNewestHistory(session);
       if (!_isCurrentInit(initVersion)) return;
-      if (!_usingChannelWindow) _legacyHistoryCursor = history.firstOrNull;
+      if (!_usingChannelWindow) {
+        _legacyHistoryCursor = history.isEmpty
+            ? null
+            : _nextCursor(history, null, 'Channel history');
+      }
       _confirmLocalMessages(history.map((event) => event.id));
 
       final existing = state.value ?? const <NostrEvent>[];
@@ -256,21 +274,36 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         ...history.where((event) => existingIds.add(event.id)),
       ]);
       _lastKnownMessages = merged;
+      _reconnectSummaries = const {};
       _reconcileRetainedSummaryPayloads(merged);
       _reconcileRetainedAggregates(historyVersion);
+      // Clear before publishing so the rebuild it triggers is no longer
+      // catching up.
+      _initInFlight = false;
       state = AsyncData(merged);
       _summaryRefreshes.resume();
       unawaited(_fillNotices());
     } catch (e, st) {
       if (!_isCurrentInit(initVersion)) return;
+      if (isRelayAccessDenied(e)) {
+        _lastKnownMessages = null;
+        _initInFlight = false;
+        state = AsyncError(e, st);
+        return;
+      }
       final fallbackMessages = state.value ?? _lastKnownMessages;
       if (fallbackMessages != null) {
         debugPrint(
           '[ChannelMessagesNotifier] history sync failed for $channelId: $e',
         );
+        _initInFlight = false;
         state = AsyncData(fallbackMessages);
+        // The fallback is usually the list already on screen, which Riverpod
+        // treats as unchanged. Notify anyway so the page sees catch-up end.
+        ref.notifyListeners();
         return;
       }
+      _initInFlight = false;
       state = AsyncError(e, st);
     } finally {
       if (_isCurrentInit(initVersion)) {
@@ -301,6 +334,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         page,
         retainLiveSummaryRootIds: _liveSummaryRootsDuringInitialWindowQuery,
       );
+      _reconnectSummaries = const {};
       _liveSummaryRootsDuringInitialWindowQuery.clear();
       _pruneOffWindowReplies();
       _usingChannelWindow = true;
@@ -311,7 +345,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       _initialWindowQueryInFlight = false;
       _liveSummaryRootsDuringInitialWindowQuery.clear();
       // Legacy history would re-run the timed-out work another way.
-      if (isRelayDeadlineError(error)) rethrow;
+      // An access refusal must reach the outer cache-clearing handler. A
+      // second transport cannot turn that refusal into a transient failure.
+      if (isRelayDeadlineError(error) || isRelayAccessDenied(error)) rethrow;
       debugPrint(
         '[ChannelMessagesNotifier] channel window unavailable for $channelId, falling back to WS history: $error',
       );
@@ -600,7 +636,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       _rotateDeletionProofTargets(missingIds);
 
   /// Snapshots cached overlay replies covered by a query for this outer root.
-  Set<String> cachedThreadReplyIds(String rootId) {
+  Set<String> cachedThreadReplyIds(String rootId) =>
+      _cachedThreadReplyIdsByRoot(only: rootId)[rootId] ?? <String>{};
+
+  /// Snapshots cached overlay replies for every outer root, or only [only].
+  Map<String, Set<String>> _cachedThreadReplyIdsByRoot({String? only}) {
     final deletedIds = {
       for (final event in [
         ..._windowStore.liveAux,
@@ -612,15 +652,21 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
           for (final tag in event.tags)
             if (tag.length > 1 && tag[0] == 'e') tag[1],
     };
-    return {
-      for (final entry in _localReplyRoots.entries)
-        if (entry.value == rootId && !deletedIds.contains(entry.key)) entry.key,
-      for (final event in _cachedThreadEvents)
-        if (event.threadReference.parentId != null &&
-            event.threadReference.rootId == rootId &&
-            !deletedIds.contains(event.id))
-          event.id,
-    };
+    final byRoot = <String, Set<String>>{};
+    void add(String root, String id) {
+      if ((only == null || root == only) && !deletedIds.contains(id)) {
+        (byRoot[root] ??= <String>{}).add(id);
+      }
+    }
+
+    for (final entry in _localReplyRoots.entries) {
+      add(entry.value, entry.key);
+    }
+    for (final event in _cachedThreadEvents) {
+      final thread = event.threadReference;
+      if (thread.parentId != null) add(thread.rootId!, event.id);
+    }
+    return byRoot;
   }
 
   /// Applies explicit deletion evidence fetched for cached replies.
@@ -1004,7 +1050,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   AsyncValue<List<NostrEvent>> get _historyState => state;
   set _historyState(AsyncValue<List<NostrEvent>> value) => state = value;
 
-  Future<bool> fetchOlder() => _fetchOlder();
+  /// Concurrent callers share one in-flight page; pages continue one cursor.
+  Future<bool> fetchOlder() => _olderInFlight ??= _fetchOlder().whenComplete(
+    () => _olderInFlight = null,
+  );
 }
 
 int _currentUnixSeconds() => DateTime.now().millisecondsSinceEpoch ~/ 1000;

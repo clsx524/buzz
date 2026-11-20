@@ -29,13 +29,15 @@ class SignedEventRelay {
 
   /// Sign and submit an event. Returns the relay's OK response as a [NostrEvent]
   /// whose `content` field contains the OK message (e.g. `"response:{...}"`
-  /// for command kinds).
+  /// for command kinds). [mayPublish] is asked right before the event goes
+  /// out, after every wait.
   Future<NostrEvent> submit({
     required int kind,
     required String content,
     required List<List<String>> tags,
     int? createdAt,
-    void Function(NostrEvent event)? onSigned,
+    FutureOr<void> Function(NostrEvent event)? onSigned,
+    Future<bool> Function()? mayPublish,
   }) async {
     final nsec = _nsec;
     if (nsec == null || nsec.isEmpty) {
@@ -56,8 +58,10 @@ class SignedEventRelay {
     );
 
     final nostrEvent = NostrEvent.fromJson(event.toMap());
-    onSigned?.call(nostrEvent);
-    return _session.publish(nostrEvent);
+    // Durable callers must finish journaling the exact signed bytes before
+    // the relay can accept an event whose acknowledgement might be lost.
+    await onSigned?.call(nostrEvent);
+    return _session.publish(nostrEvent, mayPublish: mayPublish);
   }
 }
 
