@@ -251,8 +251,9 @@ pub async fn dispatch(
             )?;
             let content = parse_content(&read_input(&input)?)?;
             require_private_channel(client, &channel).await?;
-            let event =
-                client.sign_event(EventBuilder::new(Kind::Custom(45010), content).tags(tags))?;
+            let event = client
+                .sign_event(EventBuilder::new(Kind::Custom(45010), content).tags(tags))
+                .await?;
             let event_id = event.id.to_hex();
             let raw = client.submit_event(event).await.map_err(|error| match error {
                 CliError::DeliveryUnknown(detail) => CliError::DeliveryUnknown(format!(
