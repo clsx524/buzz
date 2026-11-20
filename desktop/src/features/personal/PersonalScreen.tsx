@@ -1,12 +1,7 @@
 import * as React from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Bookmark, ChevronLeft, MessageCircle, Pin } from "lucide-react";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
-import { useAppShell } from "@/app/AppShellContext";
-import { channelsQueryKey, useChannelsQuery } from "@/features/channels/hooks";
-import { useWorkingChannels } from "@/features/agents/agentWorkingSignal";
-import { addChannelMembers, listRelayAgents } from "@/shared/api/tauri";
 import { Markdown } from "@/shared/ui/markdown";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -17,14 +12,9 @@ import {
   type AssistantItem,
   type AssistantState,
 } from "./artifacts";
-import { useAssistantItems, useAssistantScope } from "./useAssistantItems";
-import {
-  availablePersonalAgents,
-  chosenPersonalAgent,
-  createPersonalConversation,
-  fetchPersonalChannelIds,
-} from "./conversations";
-import { readPersonalPreference, writePersonalPreference } from "./config";
+import { useAssistantItems } from "./useAssistantItems";
+import { chosenPersonalAgent } from "./conversations";
+import { usePersonalConversations } from "./usePersonalConversations";
 import { AssistantControls } from "./AssistantControls";
 
 export type PersonalSection = "today" | "conversations" | "library";
@@ -478,126 +468,42 @@ function ItemActions({
 }
 
 function Conversations() {
-  const { viewer, relay, ready } = useAssistantScope();
-  const channelsQuery = useChannelsQuery();
-  const channels = channelsQuery.data ?? [];
-  const client = useQueryClient();
-  const { goChannel } = useAppNavigation();
-  const { topLevelUnreadChannelIds, unreadThreadChannelIds } = useAppShell();
-  const workingChannels = useWorkingChannels();
   const [search, setSearch] = React.useState("");
   const [name, setName] = React.useState("");
-  const [selectedAgent, setSelectedAgent] = React.useState(() =>
-    ready ? (readPersonalPreference(relay, viewer, "assistant") ?? "") : "",
-  );
-  const [pins, setPins] = React.useState<Set<string>>(() => {
-    try {
-      return new Set(
-        JSON.parse(readPersonalPreference(relay, viewer, "pins") ?? "[]"),
-      );
-    } catch {
-      return new Set();
-    }
-  });
-  const alive = React.useRef(true);
-  React.useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-    };
-  }, []);
-  const idsQuery = useQuery({
-    queryKey: [
-      "personal-conversations",
-      relay,
-      viewer,
-      channels.map((channel) => channel.id).sort(),
-    ],
-    enabled: ready && channelsQuery.isSuccess,
-    queryFn: () => fetchPersonalChannelIds(channels, viewer, relay),
-    refetchInterval: 60_000,
-  });
-  const agentsQuery = useQuery({
-    queryKey: ["personal-agents", relay, viewer],
-    enabled: ready,
-    queryFn: listRelayAgents,
-    refetchInterval: 60_000,
-  });
-  const agents = availablePersonalAgents(
-    agentsQuery.data ?? [],
+  const {
     viewer,
-    channels,
-  );
-  const chosen = selectedAgent
-    ? agents.find((agent) => agent.pubkey === selectedAgent)
-    : chosenPersonalAgent(agents, relay, viewer);
-  const creation = useMutation({
-    mutationFn: async () => {
-      if (!chosen)
-        throw new Error("Choose an available remote assistant first.");
-      const id = await createPersonalConversation(
-        name,
-        chosen,
-        viewer,
-        relay,
-        () => alive.current,
-      );
-      await client.invalidateQueries({ queryKey: channelsQueryKey });
-      if (alive.current) {
-        setName("");
-        await goChannel(id);
-      }
-    },
-    onError: () => {
-      void client.invalidateQueries({ queryKey: channelsQueryKey });
-    },
-  });
-  const assignment = useMutation({
-    mutationFn: async ({ id, pubkey }: { id: string; pubkey: string }) => {
-      await addChannelMembers({ channelId: id, pubkeys: [pubkey] });
-      if (!alive.current) return;
-      writePersonalPreference(relay, viewer, `assistant:${id}`, pubkey);
-    },
-    onSuccess: () => {
-      void agentsQuery.refetch();
-    },
-  });
-  const visible = channels
-    .filter(
-      (channel) =>
-        idsQuery.data?.has(channel.id) &&
-        channel.name.toLowerCase().includes(search.toLowerCase()),
-    )
-    .sort(
-      (a, b) =>
-        Number(pins.has(b.id)) - Number(pins.has(a.id)) ||
-        (Date.parse(b.lastMessageAt ?? "") || 0) -
-          (Date.parse(a.lastMessageAt ?? "") || 0) ||
-        a.name.localeCompare(b.name),
-    );
-  const togglePin = (id: string) => {
-    const next = new Set(pins);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    try {
-      writePersonalPreference(relay, viewer, "pins", JSON.stringify([...next]));
-      setPins(next);
-    } catch (error) {
-      setPreferenceError(
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  };
-  const [preferenceError, setPreferenceError] = React.useState<string | null>(
-    null,
-  );
+    relay,
+    ready,
+    channelsQuery,
+    idsQuery,
+    agentsQuery,
+    agents,
+    chosen,
+    creation,
+    assignment,
+    visible,
+    pins,
+    togglePin,
+    selectAgent,
+    preferenceError,
+    setPreferenceError,
+    topLevelUnreadChannelIds,
+    unreadThreadChannelIds,
+    workingChannels,
+    goChannel,
+  } = usePersonalConversations(search);
   return (
     <>
       <form
         className="space-y-4 rounded-2xl border p-5"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
-          creation.mutate();
+          try {
+            await creation.mutateAsync(name);
+            setName("");
+          } catch {
+            // creation.isError renders the failure.
+          }
         }}
       >
         <h2 className="font-medium">Start a private conversation</h2>
@@ -607,22 +513,7 @@ function Conversations() {
             className="min-h-11 w-full rounded-md border bg-background px-3"
             value={chosen?.pubkey ?? ""}
             disabled={agentsQuery.isLoading || creation.isPending}
-            onChange={(event) => {
-              try {
-                writePersonalPreference(
-                  relay,
-                  viewer,
-                  "assistant",
-                  event.target.value,
-                );
-                setSelectedAgent(event.target.value);
-                setPreferenceError(null);
-              } catch (error) {
-                setPreferenceError(
-                  error instanceof Error ? error.message : String(error),
-                );
-              }
-            }}
+            onChange={(event) => selectAgent(event.target.value)}
           >
             <option value="" disabled>
               Choose an assistant

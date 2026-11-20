@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   assistantCommand, assistantStorageMode, clearAssistantConnection, getAssistantDashboard,
   loadAssistantConnection, saveAssistantConnection,
@@ -9,6 +10,7 @@ import { AdvancedDetail, AssistantEvidence, AssistantField, assistantButtonClass
 import { WatchEditor, type AssistantRun } from "./WatchEditor";
 
 export function AssistantControls({ openConversation }: { openConversation?: (channelId: string) => void }) {
+  const queryClient = useQueryClient();
   const [connection, setConnection] = React.useState<AssistantConnection | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
@@ -41,6 +43,8 @@ export function AssistantControls({ openConversation }: { openConversation?: (ch
       }
       const next = { origin: origin.trim(), profile: profile.trim(), token: token || connection?.token || "" };
       await saveAssistantConnection(next);
+      await queryClient.invalidateQueries({ queryKey: ["personal-assistant-connection"] });
+      await queryClient.invalidateQueries({ queryKey: ["personal-assistant-sessions"] });
       if (epoch !== generation.current) return;
       setToken(""); setConnection(next); setVersion((current) => current + 1);
     } catch (failure) { if (epoch === generation.current) setError(assistantError(failure)); }
@@ -49,7 +53,11 @@ export function AssistantControls({ openConversation }: { openConversation?: (ch
   async function disconnect() {
     const epoch = ++generation.current;
     setConnection(null); setToken(""); setSaving(true); setError("");
-    try { await clearAssistantConnection(); }
+    try {
+      await clearAssistantConnection();
+      await queryClient.invalidateQueries({ queryKey: ["personal-assistant-connection"] });
+      await queryClient.invalidateQueries({ queryKey: ["personal-assistant-sessions"] });
+    }
     catch (failure) { if (epoch === generation.current) setError(assistantError(failure)); }
     finally { if (epoch === generation.current) setSaving(false); }
   }

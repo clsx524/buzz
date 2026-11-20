@@ -91,6 +91,28 @@ export interface AssistantDashboard {
   questions: AssistantQuestion[];
 }
 
+export interface AssistantSession {
+  session_id: string;
+  title: string | null;
+  source: string;
+  chat_id: string | null;
+  thread_id: string | null;
+  started_at: number;
+  ended_at: number | null;
+  last_active: number | null;
+  message_count: number;
+  parent_session_id: string | null;
+  archived: boolean;
+  pinned: boolean;
+  hidden: boolean;
+}
+
+export interface AssistantSessions {
+  ok: true;
+  profile: string;
+  sessions: AssistantSession[];
+}
+
 export class AssistantAPIError extends Error {
   readonly status: number;
 
@@ -163,7 +185,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 async function requestAssistant(
   connection: AssistantConnection,
-  endpoint: "dashboard" | "command",
+  endpoint: "dashboard" | "command" | "sessions",
   command?: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
@@ -234,4 +256,40 @@ export async function getAssistantDashboard(
     throw new AssistantAPIError("Assistant dashboard has an unsupported or incomplete response; saved results have not been replaced.", 200);
   }
   return payload as unknown as AssistantDashboard;
+}
+
+export async function getAssistantSessions(
+  connection: AssistantConnection,
+  signal?: AbortSignal,
+): Promise<AssistantSessions> {
+  const payload = await requestAssistant(connection, "sessions", undefined, signal);
+  if (
+    payload.profile !== connection.profile.trim() ||
+    !Array.isArray(payload.sessions) ||
+    !payload.sessions.every(
+      (session) =>
+        isObject(session) &&
+        typeof session.session_id === "string" &&
+        typeof session.source === "string" &&
+        (session.title === null || typeof session.title === "string") &&
+        (session.chat_id === null || typeof session.chat_id === "string") &&
+        (session.thread_id === null || typeof session.thread_id === "string") &&
+        typeof session.started_at === "number" &&
+        (session.ended_at === null || typeof session.ended_at === "number") &&
+        (session.last_active === null ||
+          typeof session.last_active === "number") &&
+        typeof session.message_count === "number" &&
+        (session.parent_session_id === null ||
+          typeof session.parent_session_id === "string") &&
+        typeof session.archived === "boolean" &&
+        typeof session.pinned === "boolean" &&
+        typeof session.hidden === "boolean",
+    )
+  ) {
+    throw new AssistantAPIError(
+      "Assistant sessions have an unsupported or incomplete response.",
+      200,
+    );
+  }
+  return payload as unknown as AssistantSessions;
 }

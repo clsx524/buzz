@@ -12624,6 +12624,12 @@ export function maybeInstallE2eTauriMocks() {
       }
       case "cancel_builderlab_login":
         return null;
+      case "load_personal_assistant_connection":
+        return null;
+      case "save_personal_assistant_connection":
+        return null;
+      case "clear_personal_assistant_connection":
+        return null;
       case "clear_builderlab_auth":
         if (activeConfig?.mock) activeConfig.mock.builderlabAuth = null;
         return null;

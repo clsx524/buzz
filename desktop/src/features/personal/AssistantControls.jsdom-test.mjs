@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import React, { act } from "react";
 import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AssistantControls } from "./AssistantControls.tsx";
 import { WatchEditor } from "./WatchEditor.tsx";
 import { AssistantActivity } from "./AssistantActivity.tsx";
@@ -18,6 +19,10 @@ const watch = () => ({ id: "records", revision: 7, next_runs: [1800000000], defi
 function json(value, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } }); }
 async function settle() { await act(async () => { await Promise.resolve(); }); }
 function change(view, label, value) { fireEvent.change(view.getByLabelText(label), { target: { value } }); }
+function renderControls() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(React.createElement(QueryClientProvider, { client }, React.createElement(AssistantControls)));
+}
 afterEach(async () => { cleanup(); globalThis.fetch = originalFetch; await clearAssistantConnection(); });
 
 test("connection opens a real dashboard without automatic discovery, and read failure retains honest stale data", async () => {
@@ -29,7 +34,7 @@ test("connection opens a real dashboard without automatic discovery, and read fa
     if (offline) throw new TypeError("Network unavailable");
     return json({ ...empty(), watches: [watch()] });
   };
-  const view = render(React.createElement(AssistantControls));
+  const view = renderControls();
   await view.findByRole("button", { name: "Edit Selected records" });
   assert.equal(requests.length, 1);
   assert.equal(requests[0].options.method, "GET");
@@ -49,7 +54,7 @@ test("late reads from a previous connection cannot replace the new profile dashb
     if (url.includes("/personal/")) return await new Promise((resolve) => { finishOld = resolve; });
     return json({ ...empty(), profile: "second", watches: [{ ...watch(), definition: { ...watch().definition, title: "Second profile monitor" } }] });
   };
-  const view = render(React.createElement(AssistantControls));
+  const view = renderControls();
   await waitFor(() => assert.equal(typeof finishOld, "function"));
   // Settings are hidden by a native details element, but remain editable through the actual form.
   fireEvent.click(view.getByText("Assistant connection settings"));
@@ -66,7 +71,7 @@ test("changing server without explicitly entering a token never sends the previo
   await saveAssistantConnection(connection);
   const requests = [];
   globalThis.fetch = async (url) => { requests.push(url); return json(empty()); };
-  const view = render(React.createElement(AssistantControls));
+  const view = renderControls();
   await view.findByRole("button", { name: "Create monitor" });
   fireEvent.click(view.getByText("Assistant connection settings"));
   change(view, "Assistant server origin", "https://other.example");
@@ -194,7 +199,7 @@ test("an ambiguous mutation failure is visible and is never replayed by the work
     if (options.method === "GET") return json({ ...empty(), concerns: [{ id: "exact", title: "Check this", status: "active" }] });
     mutations++; throw new TypeError("Connection lost after sending");
   };
-  const view = render(React.createElement(AssistantControls));
+  const view = renderControls();
   fireEvent.click(await view.findByRole("button", { name: "Mark handled" }));
   await view.findByText(/outcome may be unknown/);
   assert.equal(mutations, 1);
